@@ -6,6 +6,7 @@ type ty =
 | TyPi of string * ty * ty  
 | TyApp of ty * term
 | TyBool
+| TyNat
 
 and term =
   TmVar of int * int            (* De Bruijn index, current contex length *)
@@ -14,6 +15,11 @@ and term =
 | TmTrue
 | TmFalse
 | TmIf of term * term * term
+| TmZero
+| TmSucc of term
+| TmPred of term 
+| TmIsZero of term
+| TmFix of term
 
 and kind = 
   KiStar
@@ -48,16 +54,19 @@ val termSubstTop: term -> term -> term
 val tyShift: int -> ty -> ty
 val tySubstTop: term -> ty -> ty
 
+val shiftContext: context -> context
+
 val getTypeFromContext: context -> int -> ty
 val getKindFromContext: context -> int -> kind
 
 val print: string -> unit
 val pr: string -> unit
 val error: string -> 'a
+val prctx: context -> unit
 
 (* Printing *)
 
 val printType: context -> ty -> unit
-val printValue: context -> term -> unit
+val printTerm: context -> term -> unit
 
 
