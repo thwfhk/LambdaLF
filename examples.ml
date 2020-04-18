@@ -99,6 +99,7 @@ let plus =
 let sum = 
   TmFix(
     TmAbs("sum", 
+    (* 要注意这里是1+ctxlen，因为sum并没有加进去 *)
       TyPi("N", TyNat, TyPi("V", TyApp(vector 1, TmVar(0, ctxlen+1)), TyNat)),
       TmAbs("n", TyNat,
         TmAbs("v", TyApp(vector 2, TmVar(0, ctxlen+2)),

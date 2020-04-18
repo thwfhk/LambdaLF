@@ -10,6 +10,8 @@ let rec isval ctx t = match t with
     TmTrue -> true
   | TmFalse -> true
   | t when isnumericval ctx t -> true
+  | TmNil -> true
+  | TmCons(n, t1, t2) -> isnumericval ctx n && isval ctx t1 && isval ctx t2
   | TmAbs(_,_,_) -> true
   | _ -> false
 
@@ -50,6 +52,31 @@ let rec eval1 ctx t = match t with
   | TmIsZero(t1) ->
       let t1' = eval1 ctx t1 in
       TmIsZero(t1')
+
+  | TmCons(n, v1, t2) when isnumericval ctx v1 ->
+      let t2' = eval1 ctx t2 in
+      TmCons(n, v1, t2')
+  | TmCons(n, t1, t2) ->
+      let t1' = eval1 ctx t1 in
+      TmCons(n, t1', t2)
+  | TmIsNil(n, TmNil) ->
+      TmTrue
+  | TmIsNil(n, TmCons(m, t1, t2)) ->
+      TmFalse
+  | TmIsNil(n, t1) ->
+      let t1' = eval1 ctx t1 in
+      TmIsNil(n, t1')
+  | TmHead(n, TmCons(m, v1, t2)) when isnumericval ctx v1 ->
+      v1
+  | TmHead(n, t1) ->
+      let t1' = eval1 ctx t1 in
+      TmHead(n, t1')
+  | TmTail(n, TmCons(m, t1, v2)) when isval ctx v2 ->
+      v2
+  | TmTail(n, t1) ->
+      let t1' = eval1 ctx t1 in
+      TmTail(n, t1')
+  (* NOTE: 这里对于TmHead和TmTail只关心了他的返回值是value的时候就可以返回 *)
 
   | TmFix(v1) as t when isval ctx v1 ->
       (match v1 with
@@ -97,6 +124,7 @@ and kindof ctx tyT = match tyT with
       )
   | TyBool -> KiStar
   | TyNat -> KiStar
+  | TyVector(t) -> KiStar
 
 and kindstar ctx tyT = 
   if kindof ctx tyT = KiStar then ()
@@ -121,6 +149,7 @@ and typeof ctx t = match t with
             let () = printctx ctx;pr"\n";debugType ctx tyS1;pr"\n";debugType ctx tyS2;pr"\n" in 
             error "typeof error: parameter type mismatch"
         | _ -> error "typeof error: [TmApp] arrow type expected")
+
   | TmTrue -> 
       TyBool
   | TmFalse -> 
@@ -131,6 +160,7 @@ and typeof ctx t = match t with
         if (=) tyT2 (typeof ctx t3) then tyT2
         else error "arms of conditional have different types"
       else error "guard of conditional not a boolean"
+
   | TmZero ->
       TyNat
   | TmSucc(t1) ->
@@ -142,6 +172,7 @@ and typeof ctx t = match t with
   | TmIsZero(t1) ->
       if tyeqv ctx (typeof ctx t1) TyNat then TyBool
       else error "argument of iszero is not a number"
+
   | TmFix(t1) ->
       let tyT1 = typeof ctx t1 in
       (match tyT1 with
@@ -150,6 +181,45 @@ and typeof ctx t = match t with
           else (debugType ctx tyT11; pr"\n"; debugType ctx tyT12; pr"\n";
                 error "result of body not compatible with domain")
       | _ -> error "typeof error: [TmFix] arrow type expected")
+  
+  | TmNil -> TyVector(TmZero)
+  | TmCons(n, t1, t2) ->
+      let tyN = typeof ctx n in
+      let tyT1 = typeof ctx t1 in
+      let tyT2 = typeof ctx t2 in
+      if not (tyeqv ctx tyN TyNat) 
+      then error "typeof error: [TmCons] first argument not Nat"
+      else if not (tyeqv ctx tyT1 TyNat)
+      then error "typeof error: [TmCons] second argument not Nat"
+      else if not (tyeqv ctx tyT2 (TyVector(n))) 
+      then 
+      let () = printType ctx tyT2; pr " "; printTerm ctx n in
+      error "typeof error: [TmCons] Vector n mismatch"
+      else TyVector(TmSucc(n))
+  | TmIsNil(n, t1) ->
+      let tyN = typeof ctx n in
+      let tyT1 = typeof ctx t1 in
+      if not (tyeqv ctx tyN TyNat) 
+      then error "typeof error: [TmIsNil] first argument not Nat"
+      else if not (tyeqv ctx tyT1 (TyVector(n))) 
+      then error "typeof error: [TmIsNil] Vector n mismatch"
+      else TyBool
+  | TmHead(n, t1) ->
+      let tyN = typeof ctx n in
+      let tyT1 = typeof ctx t1 in
+      if not (tyeqv ctx tyN TyNat) 
+      then error "typeof error: [TmHead] first argument not Nat"
+      else if not (tyeqv ctx tyT1 (TyVector(n))) 
+      then error "typeof error: [TmHead] Vector n mismatch"
+      else TyNat
+  | TmTail(n, t1) ->
+      let tyN = typeof ctx n in
+      let tyT1 = typeof ctx t1 in
+      if not (tyeqv ctx tyN TyNat) 
+      then error "typeof error: [TmTail] first argument not Nat"
+      else if not (tyeqv ctx tyT1 (TyVector(n))) 
+      then error "typeof error: [TmTail] Vector n mismatch"
+      else TyVector(TmPred(n))
 
 and kindeqv ctx ki1 ki2 = match (ki1, ki2) with
     (KiStar, KiStar) -> true
@@ -173,6 +243,8 @@ and tyeqv ctx ty1 ty2 =
       tyeqv ctx tyS1 tyS2 && 
       (* let () = pr"TyApp tmeqv: ";pr (string_of_bool (tmeqv ctx t1 t2));pr"\n" in *)
       tmeqv ctx t1 t2
+  | (TyVector(n1), TyVector(n2)) ->
+      tmeqv ctx n1 n2
   | _ -> false
   
 and tmeqv ctx tm1 tm2 = 
@@ -188,6 +260,16 @@ and tmeqv ctx tm1 tm2 =
       | (TmZero, TmZero) -> true
       | (TmSucc(t1), TmSucc(s1)) -> tmeqv ctx t1 s1
       | (TmPred(t1), TmPred(s1)) -> tmeqv ctx t1 s1
+      | (TmIsZero(t1), TmIsZero(s1)) -> tmeqv ctx t1 s1
+      | (TmNil, TmNil) -> true
+      | (TmCons(t1, t2, t3), TmCons(s1, s2, s3)) -> 
+          tmeqv ctx t1 s1 && tmeqv ctx t2 s2 && tmeqv ctx t3 s3
+      | (TmIsNil(t1, t2), TmIsNil(s1,s2)) -> 
+          tmeqv ctx t1 s1 && tmeqv ctx t2 s2
+      | (TmHead(t1, t2), TmHead(s1,s2)) -> 
+          tmeqv ctx t1 s1 && tmeqv ctx t2 s2
+      | (TmTail(t1, t2), TmTail(s1,s2)) -> 
+          tmeqv ctx t1 s1 && tmeqv ctx t2 s2
       | (TmApp(t1, t2), TmApp(s1,s2)) -> 
           tmeqv ctx t1 s1 && tmeqv ctx t2 s2
       | (TmAbs(_, tyT1, t2), TmAbs(_, tyS1, s2)) ->
@@ -208,6 +290,16 @@ and tmeqvFix ctx tm1 tm2 c=
       | (TmZero, TmZero) -> true
       | (TmSucc(t1), TmSucc(s1)) -> tmeqvFix ctx t1 s1 c
       | (TmPred(t1), TmPred(s1)) -> tmeqvFix ctx t1 s1 c
+      | (TmIsZero(t1), TmIsZero(s1)) -> tmeqvFix ctx t1 s1 c
+      | (TmNil, TmNil) -> true
+      | (TmCons(t1, t2, t3), TmCons(s1, s2, s3)) -> 
+          tmeqvFix ctx t1 s1 c && tmeqvFix ctx t2 s2 c && tmeqvFix ctx t3 s3 c
+      | (TmIsNil(t1, t2), TmIsNil(s1,s2)) -> 
+          tmeqvFix ctx t1 s1 c && tmeqvFix ctx t2 s2 c
+      | (TmHead(t1, t2), TmHead(s1,s2)) -> 
+          tmeqvFix ctx t1 s1 c && tmeqvFix ctx t2 s2 c
+      | (TmTail(t1, t2), TmTail(s1,s2)) -> 
+          tmeqvFix ctx t1 s1 c && tmeqvFix ctx t2 s2 c
       | (TmApp(t1, t2), TmApp(s1,s2)) -> 
           tmeqvFix ctx t1 s1 c && tmeqvFix ctx t2 s2 c
       | (TmAbs(_, tyT1, t2), TmAbs(_, tyS1, s2)) ->
@@ -229,4 +321,6 @@ and tyeqvFix ctx ty1 ty2 c =
       in tyeqvFix ctx' tyS2 tyT2 (c+1)
   | (TyApp(tyS1, t1), TyApp(tyS2, t2)) -> 
       tyeqvFix ctx tyS1 tyS2 c && tmeqvFix ctx t1 t2 c
+  | (TyVector(n1), TyVector(n2)) ->
+      tmeqvFix ctx n1 n2 c
   | _ -> false

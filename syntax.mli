@@ -7,6 +7,7 @@ type ty =
 | TyApp of ty * term
 | TyBool
 | TyNat
+| TyVector of term
 
 and term =
   TmVar of int * int            (* De Bruijn index, current contex length *)
@@ -20,7 +21,11 @@ and term =
 | TmPred of term 
 | TmIsZero of term
 | TmFix of term
-
+| TmNil
+| TmCons of term * term * term (* n,x,v *)
+| TmIsNil of term * term
+| TmHead of term * term
+| TmTail of term * term
 and kind = 
   KiStar
 | KiPi of string * ty * kind

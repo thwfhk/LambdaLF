@@ -7,6 +7,7 @@ type ty =
   | TyApp of ty * term
   | TyBool
   | TyNat
+  | TyVector of term
   
 and term =
     TmVar of int * int            (* De Bruijn index, current contex length *)
@@ -20,6 +21,11 @@ and term =
   | TmPred of term 
   | TmIsZero of term
   | TmFix of term
+  | TmNil
+  | TmCons of term * term * term (* n,x,v *)
+  | TmIsNil of term * term
+  | TmHead of term * term
+  | TmTail of term * term
 
 and kind = 
     KiStar
@@ -108,6 +114,11 @@ let rec tmmap ontmvar ontyvar c t =
     | TmPred(t1) -> TmPred(walk c t1)
     | TmIsZero(t1) -> TmIsZero(walk c t1)
     | TmFix(t1) -> TmFix(walk c t1)
+    | TmNil -> TmNil
+    | TmCons(n, t1, t2) -> TmCons(walk c n, walk c t1, walk c t2)
+    | TmIsNil(n, t1) -> TmIsNil(walk c n, walk c t1)
+    | TmHead(n, t1) -> TmHead(walk c n, walk c t1)
+    | TmTail(n, t1) -> TmTail(walk c n, walk c t1)
   in walk c t
 
 and tymap ontmvar ontyvar c ty = 
@@ -117,6 +128,7 @@ and tymap ontmvar ontyvar c ty =
     | TyApp(ty, t) -> TyApp(walk c ty, tmmap ontmvar ontyvar c t)
     | TyBool -> TyBool
     | TyNat -> TyNat
+    | TyVector(n) -> TyVector(tmmap ontmvar ontyvar c n)
   in walk c ty
 
 (* \uparrow^d_c (t) *)
@@ -213,6 +225,8 @@ let rec printType ctx ty = match ty with
       printType ctx tyT1;
       pr " ";
       printTerm ctx t2;
+  | TyVector(n) ->
+      pr "Vector("; printTerm ctx n; pr ")"
 
 and printTerm ctx t = match t with
     TmVar(x, n) ->
@@ -240,12 +254,12 @@ and printTerm ctx t = match t with
   | TmZero ->
       pr "zero"
   | TmSucc(t1) ->
-      let rec check n t = match t with
+      let rec check t = match t with
           TmZero -> true
-        | TmSucc(s) -> check (n+1) s
+        | TmSucc(s) -> check s
         | _ -> false
       in
-      if check 0 t then 
+      if check t then 
         let rec f n t = match t with
             TmZero -> print (string_of_int n)
           | TmSucc(s) -> f (n+1) s
@@ -254,9 +268,12 @@ and printTerm ctx t = match t with
       else (pr "succ("; printTerm ctx t1; pr ")")
   | TmPred(t1) ->
       pr "pred("; printTerm ctx t1; pr ")"
+  | TmNil -> 
+      pr "nil"
+  | TmCons(n, t1, t2) ->
+      pr"cons("; printTerm ctx n; pr","; printTerm ctx t1; pr","; printTerm ctx t2; pr")"
   | _ -> error "Non-value encountered when printing."
 
-  (* FIXME: 这个print里还是有些bug的，比如pred打印不出来，不过并不关键先不管了 *)
 
 let rec debugType ctx ty = match ty with
     TyBool -> 
@@ -273,6 +290,9 @@ let rec debugType ctx ty = match ty with
       debugType ctx tyT1;
       pr " ";
       debugTerm ctx t2;
+  | TyVector(n) ->
+      pr "Vector("; printTerm ctx n; pr ")"
+
 and debugTerm ctx t = match t with
     TmVar(x, n) ->
       (pr "TmVar("; pr (string_of_int x); pr")")
@@ -308,3 +328,5 @@ and debugTerm ctx t = match t with
   | TmPred(t1) ->
     pr "pred("; debugTerm ctx t1; pr ")"
   | _ -> error "Non-value encountered when printing."
+
+(* TODO: 这个print和debug还应该完善一下 *)
