@@ -117,7 +117,9 @@ and typeof ctx t = match t with
       (match ty with
           TyPi(_, tyS1, tyT) ->
             if tyeqv ctx tyS1 tyS2 then tySubstTop t2 tyT (* [x->t2]tyT *)
-            else error "typeof error: parameter type mismatch"
+            else 
+            let () = printctx ctx;pr"\n";debugType ctx tyS1;pr"\n";debugType ctx tyS2;pr"\n" in 
+            error "typeof error: parameter type mismatch"
         | _ -> error "typeof error: [TmApp] arrow type expected")
   | TmTrue -> 
       TyBool
@@ -144,8 +146,9 @@ and typeof ctx t = match t with
       let tyT1 = typeof ctx t1 in
       (match tyT1 with
         TyPi(_, tyT11, tyT12) ->
-          if tyeqv ctx tyT11 tyT12 then tyT11
-          else error "result of body not compatible with domain"
+          if tyeqvFix ctx tyT11 tyT12 0 then tyT11
+          else (debugType ctx tyT11; pr"\n"; debugType ctx tyT12; pr"\n";
+                error "result of body not compatible with domain")
       | _ -> error "typeof error: [TmFix] arrow type expected")
 
 and kindeqv ctx ki1 ki2 = match (ki1, ki2) with
@@ -156,7 +159,9 @@ and kindeqv ctx ki1 ki2 = match (ki1, ki2) with
       in kindeqv ctx' kiK1 kiK2
   | _ -> false
 
-and tyeqv ctx ty1 ty2 = match (ty1, ty2) with
+and tyeqv ctx ty1 ty2 = 
+  (* let () = (pr "tyeqv "; debugType ctx ty1; pr" "; debugType ctx ty2; pr"\n") in *)
+  match (ty1, ty2) with
     (TyBool, TyBool) -> true
   | (TyNat, TyNat) -> true
   | (TyVar(x1,_), TyVar(x2,_)) -> x1 = x2
@@ -165,12 +170,63 @@ and tyeqv ctx ty1 ty2 = match (ty1, ty2) with
       let ctx' = addbinding ctx x (VarBind(tyS1)) 
       in tyeqv ctx' tyS2 tyT2
   | (TyApp(tyS1, t1), TyApp(tyS2, t2)) -> 
-      tyeqv ctx tyS1 tyS2 && tmeqv ctx t1 t2
+      tyeqv ctx tyS1 tyS2 && 
+      (* let () = pr"TyApp tmeqv: ";pr (string_of_bool (tmeqv ctx t1 t2));pr"\n" in *)
+      tmeqv ctx t1 t2
   | _ -> false
   
-and tmeqv ctx tm1 tm2 =    
-    let () = (pr "tmeqv "; printTerm ctx tm1; pr" "; printTerm ctx tm2) in
+and tmeqv ctx tm1 tm2 = 
+    (* let () = (pr "tmeqv tm "; debugTerm ctx tm1; pr" "; debugTerm ctx tm2; pr"\n") in *)
     let v1 = eval ctx tm1 in
     let v2 = eval ctx tm2 in
-    v1 = v2
+    (* let () = (pr "tmeqv v "; debugTerm ctx v1; pr" "; debugTerm ctx v2; pr"\n"; pr (string_of_bool (v1 = v2)); pr"\n") in *)
+    match (v1, v2) with
+        (TmTrue, TmTrue) -> true
+      | (TmFalse, TmFalse) -> true
+      | (TmIf(t1, t2, t3), TmIf(s1, s2, s3)) -> 
+          tmeqv ctx t1 s1 && tmeqv ctx t2 s2 && tmeqv ctx t3 s3
+      | (TmZero, TmZero) -> true
+      | (TmSucc(t1), TmSucc(s1)) -> tmeqv ctx t1 s1
+      | (TmPred(t1), TmPred(s1)) -> tmeqv ctx t1 s1
+      | (TmApp(t1, t2), TmApp(s1,s2)) -> 
+          tmeqv ctx t1 s1 && tmeqv ctx t2 s2
+      | (TmAbs(_, tyT1, t2), TmAbs(_, tyS1, s2)) ->
+          tyeqv ctx tyT1 tyS1 && tmeqv ctx t2 s2
+      | (TmVar(x1, _), TmVar(x2, _)) -> x1 = x2
+      | _ -> v1 = v2
+
+and tmeqvFix ctx tm1 tm2 c=    
+    (* let () = (pr "tmeqv tm "; debugTerm ctx tm1; pr" "; debugTerm ctx tm2; pr"\n") in *)
+    let v1 = eval ctx tm1 in
+    let v2 = eval ctx tm2 in
+    (* let () = (pr "tmeqv v "; debugTerm ctx v1; pr" "; debugTerm ctx v2; pr"\n"; pr (string_of_bool (v1 = v2)); pr"\n") in *)
+    match (v1, v2) with
+        (TmTrue, TmTrue) -> true
+      | (TmFalse, TmFalse) -> true
+      | (TmIf(t1, t2, t3), TmIf(s1, s2, s3)) -> 
+          tmeqvFix ctx t1 s1 c && tmeqvFix ctx t2 s2 c && tmeqvFix ctx t3 s3 c
+      | (TmZero, TmZero) -> true
+      | (TmSucc(t1), TmSucc(s1)) -> tmeqvFix ctx t1 s1 c
+      | (TmPred(t1), TmPred(s1)) -> tmeqvFix ctx t1 s1 c
+      | (TmApp(t1, t2), TmApp(s1,s2)) -> 
+          tmeqvFix ctx t1 s1 c && tmeqvFix ctx t2 s2 c
+      | (TmAbs(_, tyT1, t2), TmAbs(_, tyS1, s2)) ->
+          tyeqvFix ctx tyT1 tyS1 c && tmeqvFix ctx t2 s2 (c+1)
+      | (TmVar(x1, _), TmVar(x2, _)) -> if x1>=c then x1+1 = x2 else x1 = x2
+      | _ -> v1 = v2
+
   
+and tyeqvFix ctx ty1 ty2 c = 
+    (* let () = printctx ctx;pr " "; debugType ctx ty1; pr" "; debugType ctx ty2; pr"\n" in *)
+    match (ty1, ty2) with 
+    (TyBool, TyBool) -> true
+  | (TyNat, TyNat) -> true
+  | (TyVar(x1,_), TyVar(x2,_)) -> if x1>=c then x1+1 = x2 else x1 = x2
+  (* ty2比ty1的ctx多了一个变量绑定，但是用的ctx是ty1的 *)
+  | (TyPi(x, tyS1, tyS2), TyPi(_, tyT1, tyT2)) ->
+      tyeqvFix ctx tyS1 tyT1 c &&
+      let ctx' = addbinding ctx x (VarBind(tyS1)) 
+      in tyeqvFix ctx' tyS2 tyT2 (c+1)
+  | (TyApp(tyS1, t1), TyApp(tyS2, t2)) -> 
+      tyeqvFix ctx tyS1 tyS2 c && tmeqvFix ctx t1 t2 c
+  | _ -> false

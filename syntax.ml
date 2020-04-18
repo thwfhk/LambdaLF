@@ -186,9 +186,11 @@ let rec getTypeFromContext ctx i =
 let rec getKindFromContext ctx i =
   match  getbinding ctx i with
     TyVarBind(ki) -> ki
-  | _ -> error "getKindFromContext Error: Wrong kind of binding for variable "
+  | _ -> printctx ctx; error "getKindFromContext Error: Wrong kind of binding for variable "
 
 (* ---------------------------------------------------------------------- *)
+
+  
 
 let rec printType ctx ty = match ty with
     TyBool -> 
@@ -250,6 +252,59 @@ and printTerm ctx t = match t with
           | _ -> error "succ stuck encountered when printing"
         in f 0 t
       else (pr "succ("; printTerm ctx t1; pr ")")
+  | TmPred(t1) ->
+      pr "pred("; printTerm ctx t1; pr ")"
   | _ -> error "Non-value encountered when printing."
 
   (* FIXME: 这个print里还是有些bug的，比如pred打印不出来，不过并不关键先不管了 *)
+
+let rec debugType ctx ty = match ty with
+    TyBool -> 
+      pr "Bool"
+  | TyNat ->
+      pr "Nat"
+  | TyPi(x, ty1, ty2) ->
+      let (ctx', x') = pickfreshname ctx x in
+      pr"(Pi "; pr x'; pr ":"; debugType ctx ty1; 
+      pr "."; debugType ctx' ty2; pr ")"
+  | TyVar(x, n) ->
+      (pr "TyVar("; pr (string_of_int x); pr")")
+  | TyApp(tyT1, t2) ->
+      debugType ctx tyT1;
+      pr " ";
+      debugTerm ctx t2;
+and debugTerm ctx t = match t with
+    TmVar(x, n) ->
+      (pr "TmVar("; pr (string_of_int x); pr")")
+  | TmApp(t1, t2) ->
+    printTerm ctx t1;
+    pr " ";
+    printTerm ctx t2
+  | TmAbs(x, tyT1, t2) -> 
+    let (ctx', x') = pickfreshname ctx x in  (* 这里有将x加到ctx中！ *)
+    pr "(lambda "; pr x'; pr ":"; printType ctx tyT1;
+    pr "."; printTerm ctx' t2; pr ")"
+  | TmTrue -> 
+    pr "true"
+  | TmFalse ->
+    pr "false"
+  | TmIf(t1, t2, t3) ->
+    pr "if "; debugTerm ctx t1; pr " then "; debugTerm ctx t2; pr " else "; debugTerm ctx t3
+  | TmZero ->
+    pr "zero"
+  | TmSucc(t1) ->
+    let rec check n t = match t with
+        TmZero -> true
+      | TmSucc(s) -> check (n+1) s
+      | _ -> false
+    in
+    if check 0 t then 
+      let rec f n t = match t with
+          TmZero -> print (string_of_int n)
+        | TmSucc(s) -> f (n+1) s
+        | _ -> error "succ stuck encountered when printing"
+      in f 0 t
+    else (pr "succ("; debugTerm ctx t1; pr ")")
+  | TmPred(t1) ->
+    pr "pred("; debugTerm ctx t1; pr ")"
+  | _ -> error "Non-value encountered when printing."

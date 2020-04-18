@@ -1,62 +1,121 @@
 open Syntax
 open Core
 
-let t = TmAbs("x", TyBool, TmVar(0, 1))
+let ctxlen = 6
 
-let ctx1 = [("hi", TyVarBind(KiPi("x", TyBool, KiStar))); ("hiIns", VarBind(TyApp(TyVar(0, 2), TmTrue)))]
+let ctx = [("Vector", TyVarBind(KiPi("x", TyNat, KiStar))); 
+          ("nil", VarBind(TyApp(TyVar(0, ctxlen), TmZero)));
+          ("cons", VarBind( 
+            TyPi("n", TyNat, 
+              TyPi("x", TyNat, 
+                TyPi("v", 
+                  TyApp(TyVar(2, 2+ctxlen), TmVar(1, 2+ctxlen)), 
+                  TyApp(TyVar(3, 3+ctxlen), TmSucc(TmVar(2, 3+ctxlen))) 
+                ) 
+              )
+            )));
+          ("isnil", VarBind(
+            TyPi("n", TyNat,
+              TyPi("v", TyApp(TyVar(1, 1+ctxlen), TmVar(0, 1+ctxlen)), TyBool)
+            )
+          ));
+          ("head", VarBind(
+            TyPi("n", TyNat,
+              TyPi("v", TyApp(TyVar(1, 1+ctxlen), TmVar(0, 1+ctxlen)), TyNat)
+            )
+          ));
+          ("tail", VarBind(
+            TyPi("n", TyNat,
+              TyPi("v", TyApp(TyVar(1, 1+ctxlen), TmVar(0, 1+ctxlen)), 
+                TyApp(TyVar(2, 2+ctxlen), TmPred(TmVar(1, 2+ctxlen)))
+              )
+            )
+          ));
+          ]
+(* 新的global binding加在后面，这样可以不改动之前的De Bruijn index *)
 
-let t1 = TmAbs("x", TyApp(TyVar(0, 2), TmTrue), TmVar(0, 3))
+let prty t = printType ctx (typeof ctx t); pr"\n"
 
-let t2 = TmApp(t1, TmVar(1,2)) (* :hi true *)
-
-let t3 = TmAbs("x", TyBool, TmVar(2, 3))
-
-(* 还没测试Pi中有lambda，不过应该没啥问题 'w| *)
-
-
-let ctx2 = [("Vector", TyVarBind(KiPi("x", TyNat, KiStar))); ("nil", VarBind(TyApp(TyVar(0, 3), TmZero)));
-            ("cons", VarBind( 
-              TyPi("n", TyNat, 
-                TyPi("x", TyBool, 
-                  TyPi("v", 
-                    TyApp(TyVar(2, 5), TmVar(1, 5)), 
-                    TyApp(TyVar(3, 6), TmSucc(TmVar(2, 6))) 
-                  ) 
-                )
-              ) ))]
-
-let ty1 = typeof ctx2 (TmVar(2,3))
+(* d表示有几层binding *)
+let vector d = TyVar(d, d+ctxlen)
+let nil d = TmVar(d+1, d+ctxlen)
+let cons d = TmVar(d+2, d+ctxlen)
+let isnil d = TmVar(d+3, d+ctxlen)
+let head d = TmVar(d+4, d+ctxlen)
+let tail d = TmVar(d+5, d+ctxlen)
 
 let one = TmSucc(TmZero)
 let two = TmSucc(one)
 
-let mkone = TmAbs("x", TyBool, 
+let mkone = TmAbs("x", TyNat, 
               TmApp(
                 TmApp(
-                  TmApp(TmVar(3, 4), TmZero), 
-                  TmVar(0, 4)
+                  TmApp(cons 1, TmZero), 
+                  TmVar(0, 1+ctxlen)
                 ), 
-                TmVar(2,  4)
+                nil 1
               )
             )
 
-let mktwo = TmAbs("y", TyBool, 
-              TmAbs("x", TyBool, 
+let mktwo = TmAbs("y", TyNat, 
+              TmAbs("x", TyNat, 
                 TmApp(
                   TmApp(
-                    TmApp(TmVar(4, 5), TmSucc(TmZero)),
-                    TmVar(1, 5)
+                    TmApp(cons 2, TmSucc(TmZero)),
+                    TmVar(1, 2+ctxlen)
                   ),
                   TmApp(
                     TmApp(
-                      TmApp(TmVar(4, 5), TmZero), 
-                      TmVar(0, 5)
+                      TmApp(cons 2, TmZero), 
+                      TmVar(0, 2+ctxlen)
                     ), 
-                    TmVar(3,  5)
+                    nil 2
                   )
                 )
               )
             )
 
-let vec1 = TmApp(mkone, TmTrue)
-let vec2 = TmApp(TmApp(mktwo, TmTrue), TmFalse)
+let vec1 = TmApp(mkone, TmZero)
+let vec2 = TmApp(TmApp(mktwo, one), two)
+
+
+(* ----------------------------------------------------- *)
+
+let plus = 
+  TmFix(
+    TmAbs("plus", TyPi("X", TyNat, TyPi("Y", TyNat, TyNat)),
+      TmAbs("x", TyNat, 
+        TmAbs("y", TyNat,
+          TmIf(
+            TmIsZero(TmVar(1, ctxlen+3)),
+            TmVar(0, ctxlen+3),
+            TmApp(TmApp(TmVar(2, ctxlen+3), TmPred(TmVar(1, ctxlen+3))), TmSucc(TmVar(0, ctxlen+3)))
+          )
+        )
+      )
+    )
+  )
+
+let sum = 
+  TmFix(
+    TmAbs("sum", 
+      TyPi("N", TyNat, TyPi("V", TyApp(vector 1, TmVar(0, ctxlen+1)), TyNat)),
+      TmAbs("n", TyNat,
+        TmAbs("v", TyApp(vector 2, TmVar(0, ctxlen+2)),
+          TmIf(
+            TmApp(TmApp(isnil 3, TmVar(1, ctxlen+3)), TmVar(0, ctxlen+3)),
+            TmZero,
+            TmApp(
+              TmApp(plus, TmApp(TmApp(head 3, TmVar(1, ctxlen+3)), TmVar(0, ctxlen+3))),
+              TmApp(TmApp(TmVar(2, ctxlen+3), 
+                TmPred(TmVar(1, ctxlen+3))), 
+                TmApp(TmApp(tail 3, TmVar(1, ctxlen+3)), TmVar(0, ctxlen+3))
+              )
+            )
+          )
+        )
+      )
+    )
+  )
+
+let sum_of_vec2 = TmApp(TmApp(sum, two), vec2)
